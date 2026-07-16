@@ -116,8 +116,9 @@ PYEOF
           if [ "$GATE_PASS" != "$GATE_CONF" ]; then
             echo "passwords do not match"; exit 1
           fi
-          ${pkgs.python3}/bin/python3 gen-digest.py \
-            --output tpmstate/expected.bin "$GATE_PASS"
+          # Pipe via stdin so the password never appears in /proc/*/cmdline
+          printf '%s\n' "$GATE_PASS" | ${pkgs.python3}/bin/python3 gen-digest.py \
+            --output tpmstate/expected.bin
           unset GATE_PASS GATE_CONF
 
           # (Re)define the NV index with the PCR policy as its read authorization.
@@ -267,8 +268,9 @@ PYEOF
               echo "passwords do not match"; exit 1
             fi
             echo "stretching (100k rounds)..."
-            ${pkgs.python3}/bin/python3 ${self}/gen-digest.py \
-              --output "$WORK/expected.bin" "$GATE_PASS"
+            # Pipe via stdin so the password never appears in /proc/*/cmdline
+            printf '%s\n' "$GATE_PASS" | ${pkgs.python3}/bin/python3 ${self}/gen-digest.py \
+              --output "$WORK/expected.bin"
             unset GATE_PASS GATE_CONF
 
             # (Re)define the NV index with the PCR policy as read authorization.
@@ -309,9 +311,9 @@ PYEOF
             boot.loader.limine = {
               additionalFiles."efi/shell/shell.efi" = "${shell-efi}/shell.efi";
               extraEntries = lib.mkIf cfg.addBootEntry ''
-                /Secure Shell
+                /UEFI Shell
                 protocol: efi
-                comment: Auth-gated UEFI shell (password + TPM PCR 7 policy)
+                comment: Command-line shell for running UEFI programs (requires secure boot)
                 image_path: boot():/limine/efi/shell/shell.efi
               '';
             };

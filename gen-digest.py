@@ -7,9 +7,12 @@ Scheme (must match ShellAuth.c exactly):
   expected = d(ITERATIONS)
 
 Usage:
-  gen-digest.py [--output FILE] <password>
+  gen-digest.py [--output FILE] [password]
 
   --output FILE   write the 32-byte expected digest as binary (for tpm2_nvwrite)
+
+  If password is omitted, it is read from stdin (first line, newline stripped).
+  Prefer stdin: argv is visible in /proc/<pid>/cmdline while the KDF runs.
 """
 import argparse
 import hashlib
@@ -32,13 +35,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", metavar="FILE",
                         help="write 32-byte binary digest to FILE (for tpm2_nvwrite)")
-    parser.add_argument("password")
+    parser.add_argument("password", nargs="?", default=None)
     args = parser.parse_args()
 
-    if len(args.password) > MAX_PASSWORD_LEN:
+    password = args.password
+    if password is None:
+        password = sys.stdin.readline().rstrip("\n")
+
+    if len(password) > MAX_PASSWORD_LEN:
         sys.exit(f"password longer than {MAX_PASSWORD_LEN} chars")
 
-    buf = args.password.encode("utf-16-le").ljust(2 * MAX_PASSWORD_LEN, b"\0")
+    buf = password.encode("utf-16-le").ljust(2 * MAX_PASSWORD_LEN, b"\0")
     digest = hashlib.sha256(SALT + buf).digest()
     print(f"d0 (cross-check against gate at iterations=0): {digest.hex()}")
 
