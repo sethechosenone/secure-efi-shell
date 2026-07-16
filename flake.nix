@@ -11,6 +11,31 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
+        # The released auth-gated Shell.efi, fetched from the GitHub release
+        # (building EDK2 inside a derivation is not worth the weight).
+        # Bump url and hash together when cutting a new release.
+        shell-efi = pkgs.stdenv.mkDerivation {
+          pname = "secure-efi-shell";
+          version = "0.1.0";
+
+          src = pkgs.fetchurl {
+            url = "https://github.com/sethechosenone/secure-efi-shell/releases/download/v0.1.0/Shell.efi";
+            hash = "sha256-1xbBJupfi+ySvuaTVi7gBdlAsKKy9knieb2hi3Obc2M=";
+          };
+
+          dontUnpack = true;
+
+          installPhase = ''
+            mkdir -p $out
+            cp $src $out/shell.efi
+          '';
+
+          meta = with pkgs.lib; {
+            description = "Auth-gated EDK2 UEFI shell — password gate backed by TPM2 PolicyPCR(7)";
+            platforms = platforms.linux;
+          };
+        };
+
         # Boot the fake ESP (./esp) in QEMU with OVMF; exit with Ctrl-A x
         # OVMFFull (not OVMF) so the firmware has the TCG2/TPM2 driver stack;
         # swtpm provides a software TPM2 whose state persists in ./tpmstate.
@@ -134,6 +159,11 @@ PYEOF
         '';
       in
       {
+        packages = {
+          default = shell-efi;
+          secure-efi-shell = shell-efi;
+        };
+
         devShells.default = pkgs.mkShell {
           # EDK2 BaseTools won't compile with Nix's default fortify/format hardening
           hardeningDisable = [ "format" "fortify" ];
@@ -176,5 +206,123 @@ PYEOF
             echo "EDK2 dev shell — OVMF firmware in $OVMF_FV"
           '';
         };
-      });
+      }) // {
+      # Turnkey integration for Limine + sbctl systems:
+      #   boot.secure-efi-shell.enable = true;
+      # Stages the shell on the ESP via boot.loader.limine.additionalFiles and
+      # re-signs it with the device's own sbctl keys during activation. The
+      # Limine installer re-copies the unsigned binary on every rebuild, but
+      # activation runs after the bootloader install on `nixos-rebuild switch`,
+      # so the ESP copy always ends up signed. Keys never leave /var/lib/sbctl.
+      #
+      # Caveat: with `nixos-rebuild boot`, activation only runs once the new
+      # generation boots — selecting the shell entry on that very first reboot
+      # (before Linux has run) finds it unsigned and Secure Boot rejects it.
+      # Booting Linux once fixes it.
+      nixosModules.secure-efi-shell = { config, lib, pkgs, ... }:
+        let
+          cfg = config.boot.secure-efi-shell;
+          shell-efi = self.packages.${pkgs.stdenv.hostPlatform.system}.secure-efi-shell;
+          espShell = "${config.boot.loader.efi.efiSysMountPoint}/limine/efi/shell/shell.efi";
+
+          # One-time per-device TPM ceremony: seals the stretched password hash
+          # into NV 0x01800001 behind PolicyPCR(7), using the REAL TPM via the
+          # kernel resource manager. PCR 7 is read from the running system —
+          # both Linux and the shell chainload verify against the same db key,
+          # so the boot-menu PCR 7 matches what we capture here.
+          # gen-digest.py comes from this flake's source, so the KDF parameters
+          # can never drift from the gate that checks them.
+          provision-efi-shell = pkgs.writeShellScriptBin "provision-efi-shell" ''
+            set -e
+            NVINDEX=0x01800001
+            if [ "$(id -u)" -ne 0 ]; then
+              echo "must run as root (TPM owner auth + /dev/tpmrm0)"; exit 1
+            fi
+
+            WORK="$(mktemp -d)"
+            trap 'rm -rf "$WORK"' EXIT
+
+            echo "reading PCR 7 from /dev/tpmrm0..."
+            ${pkgs.tpm2-tools}/bin/tpm2_pcrread sha256:7 -o "$WORK/pcr7.bin" >/dev/null
+
+            # Compute the PolicyPCR(sha256:7) digest directly from the TPM spec.
+            ${pkgs.python3}/bin/python3 - "$WORK/pcr7.bin" "$WORK/policy.digest" <<'PYEOF'
+            import sys, hashlib, struct
+            pcr7 = open(sys.argv[1], 'rb').read()
+            assert len(pcr7) == 32, f"pcr7.bin must be 32 bytes, got {len(pcr7)}"
+            pcr_sel = (struct.pack('>I', 1) +       # TPML_PCR_SELECTION count=1
+                       struct.pack('>H', 0x000B) +  # TPM_ALG_SHA256
+                       bytes([3, 0x80, 0x00, 0x00]))# sizeofSelect=3, PCR 7 bit set
+            policy = hashlib.sha256(
+                bytes(32) + struct.pack('>I', 0x0000017F) + pcr_sel +
+                hashlib.sha256(pcr7).digest()
+            ).digest()
+            open(sys.argv[2], 'wb').write(policy)
+            print(f"policy digest: {policy.hex()}")
+            PYEOF
+
+            IFS= read -r -s -p "gate password: " GATE_PASS; echo ""
+            IFS= read -r -s -p "confirm: "       GATE_CONF; echo ""
+            if [ "$GATE_PASS" != "$GATE_CONF" ]; then
+              echo "passwords do not match"; exit 1
+            fi
+            echo "stretching (100k rounds)..."
+            ${pkgs.python3}/bin/python3 ${self}/gen-digest.py \
+              --output "$WORK/expected.bin" "$GATE_PASS"
+            unset GATE_PASS GATE_CONF
+
+            # (Re)define the NV index with the PCR policy as read authorization.
+            ${pkgs.tpm2-tools}/bin/tpm2_nvundefine -C o "$NVINDEX" 2>/dev/null || true
+            ${pkgs.tpm2-tools}/bin/tpm2_nvdefine "$NVINDEX" -C o -s 32 \
+              -a "ownerwrite|policyread" \
+              -L "$WORK/policy.digest"
+            ${pkgs.tpm2-tools}/bin/tpm2_nvwrite "$NVINDEX" -C o -i "$WORK/expected.bin"
+            echo "NV $NVINDEX provisioned — reboot and test the Secure Shell entry"
+          '';
+        in
+        {
+          options.boot.secure-efi-shell = {
+            enable = lib.mkEnableOption "the auth-gated UEFI shell in the Limine boot menu";
+
+            addBootEntry = lib.mkOption {
+              type = lib.types.bool;
+              default = true;
+              description = ''
+                Add a Limine menu entry for the shell. Disable to write your own
+                entry (image_path: boot():/limine/efi/shell/shell.efi).
+              '';
+            };
+
+            autoSign = lib.mkOption {
+              type = lib.types.bool;
+              default = true;
+              description = ''
+                Re-sign the ESP copy with this device's sbctl keys at activation.
+                Without this the entry stops verifying after every rebuild.
+              '';
+            };
+          };
+
+          config = lib.mkIf cfg.enable {
+            environment.systemPackages = [ provision-efi-shell ];
+
+            boot.loader.limine = {
+              additionalFiles."efi/shell/shell.efi" = "${shell-efi}/shell.efi";
+              extraEntries = lib.mkIf cfg.addBootEntry ''
+                /Secure Shell
+                protocol: efi
+                comment: Auth-gated UEFI shell (password + TPM PCR 7 policy)
+                image_path: boot():/limine/efi/shell/shell.efi
+              '';
+            };
+
+            system.activationScripts.secure-efi-shell-sign = lib.mkIf cfg.autoSign ''
+              if [ -f "${espShell}" ] && [ -d /var/lib/sbctl/keys ]; then
+                ${pkgs.sbctl}/bin/sbctl sign "${espShell}" \
+                  || echo "[secure-efi-shell] warning: signing failed; boot entry will not verify" >&2
+              fi
+            '';
+          };
+        };
+    };
 }
