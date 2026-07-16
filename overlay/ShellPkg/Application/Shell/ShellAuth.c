@@ -23,7 +23,7 @@
 // TPM2_CC_PolicyPCR is absent from this EDK2 checkout's Tpm2CommandLib.
 // Built as a raw byte buffer to avoid struct-layout issues with variable-length
 // TPML_PCR_SELECTION (in-memory size != wire size when count < HASH_COUNT).
-// Wire order per spec: header ¿ policySession ¿ pcrDigest ¿ pcrs.
+// Wire order per spec: header -> policySession -> pcrDigest -> pcrs.
 STATIC EFI_STATUS PolicyPcr7 (TPMI_SH_POLICY Session) {
   UINT8  Cmd[32] = {0};
   UINT8  Rsp[sizeof(TPM2_RESPONSE_HEADER)] = {0};
@@ -32,7 +32,7 @@ STATIC EFI_STATUS PolicyPcr7 (TPMI_SH_POLICY Session) {
 
   // Header: tag, paramSize (filled after), commandCode
   WriteUnaligned16((UINT16*)p, SwapBytes16(TPM_ST_NO_SESSIONS)); p += 2;
-  p += 4;  // paramSize placeholder ¿ filled after size is known
+  p += 4;  // paramSize placeholder -> filled after size is known
   WriteUnaligned32((UINT32*)p, SwapBytes32(TPM_CC_PolicyPCR));   p += 4;
   // policySession handle
   WriteUnaligned32((UINT32*)p, SwapBytes32(Session));             p += 4;
