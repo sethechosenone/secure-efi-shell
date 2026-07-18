@@ -1259,7 +1259,7 @@ LocateStartupScript (
   //
   if ((StartupScriptPath == NULL) || EFI_ERROR (ShellIsFile (StartupScriptPath))) {
     SHELL_FREE_NON_NULL (StartupScriptPath);
-    StartupScriptPath = ShellFindFilePath (mStartupScript);
+  //  StartupScriptPath = ShellFindFilePath (mStartupScript);
   }
 
   return StartupScriptPath;
