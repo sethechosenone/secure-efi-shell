@@ -15,4 +15,6 @@ typedef enum {
 
 VOID LogAuthEvent(SHELL_AUTH_LOG_EVENT event, UINT8 attempt);
 
+VOID LogCmdEvent(CHAR16 *cmd);
+
 #endif

@@ -11,6 +11,7 @@
 
 #include "Shell.h"
 #include "ShellAuth.h"
+#include "ShellLog.h"
 
 //
 // Initialize the global structure
@@ -358,7 +359,6 @@ UefiMain (
   EFI_HANDLE                      ConInHandle;
   EFI_SIMPLE_TEXT_INPUT_PROTOCOL  *OldConIn;
   SPLIT_LIST                      *Split;
-
 
   if (PcdGet8 (PcdShellSupportLevel) > 3) {
     return (EFI_UNSUPPORTED);
@@ -1362,6 +1362,14 @@ DoStartupScript (
   FileStringPath = LocateStartupScript (ImagePath, FilePath);
   if (FileStringPath != NULL) {
     FullFileStringPath = FullyQualifyPath (FileStringPath);
+    //
+    // log that we are running a startup.nsh
+    //
+    CHAR16 *marker = CatSPrint(NULL, L"-- Executing startup.nsh at %s --", FileStringPath);
+    if (marker != NULL) {
+      LogCmdEvent(marker);
+      FreePool(marker);
+    }
     if (FullFileStringPath == NULL) {
       Status = RunScriptFile (FileStringPath, NULL, FileStringPath, ShellInfoObject.NewShellParametersProtocol);
     } else {
@@ -2812,6 +2820,11 @@ RunShellCommand (
     SHELL_FREE_NON_NULL (CleanOriginal);
     return (EFI_SUCCESS);
   }
+
+  //
+  // Log the command in the event log after the empty check, before expansion
+  //
+  LogCmdEvent(CleanOriginal);
 
   Status = ProcessCommandLineToFinal (&CleanOriginal);
   if (EFI_ERROR (Status)) {
