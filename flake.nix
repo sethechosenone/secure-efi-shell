@@ -16,7 +16,7 @@
         # Bump url and hash together when cutting a new release.
         shell-efi = pkgs.stdenv.mkDerivation {
           pname = "secure-efi-shell";
-          version = "0.1.0";
+          version = "0.2.0";
 
           src = pkgs.fetchurl {
             url = "https://github.com/sethechosenone/secure-efi-shell/releases/download/v0.1.0/Shell.efi";
@@ -159,6 +159,15 @@ PYEOF
           exec ${pkgs.bear}/bin/bear --append -- build -a X64 -t GCC -p ShellPkg/ShellPkg.dsc "$@"
         '';
 
+        # Release build without bear (bear interferes with RELEASE compiler flags).
+        # Produces the signed-ready Shell.efi at Build/Shell/RELEASE_GCC/.../OUTPUT/Shell.efi
+        release-shell = pkgs.writeShellScriptBin "release-shell" ''
+          set -e
+          cd "''${EDK2_ROOT:-$PWD/edk2}"
+          source ./edksetup.sh >/dev/null
+          exec build -a X64 -t GCC -p ShellPkg/ShellPkg.dsc -b RELEASE "$@"
+        '';
+
         # Copy every ShellPkg file that differs from pristine upstream back into
         # overlay/ (the inverse of setup-edk2's `cp -r overlay/* edk2/`).
         # The edk2/ checkout's own git index is the source of truth for what
@@ -222,6 +231,7 @@ PYEOF
             run-qemu
             capture-pcr7
             build-shell
+            release-shell
             sync-overlay
             provision-swtpm
             setup-edk2

@@ -109,7 +109,8 @@ stack), swtpm, tpm2-tools, and these helper commands:
 
 ```
 setup-edk2         # clone edk2 at the pinned commit, init submodules, apply overlay/
-build-shell        # build ShellPkg (X64, GCC) under bear → compile_commands.json
+build-shell        # build ShellPkg (X64, GCC, DEBUG) under bear → compile_commands.json
+release-shell      # build ShellPkg (X64, GCC, RELEASE) without bear
 run-qemu           # boot esp/ in QEMU with OVMF + a swtpm TPM2 (state in tpmstate/)
 capture-pcr7 HEX   # save the boot-time PCR 7 value (64 hex chars) to tpmstate/pcr7.bin
 provision-swtpm    # seal the expected password hash into swtpm's NV, bound to PCR 7
