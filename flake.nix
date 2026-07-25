@@ -19,8 +19,8 @@
           version = "0.2.0";
 
           src = pkgs.fetchurl {
-            url = "https://github.com/sethechosenone/secure-efi-shell/releases/download/v0.1.0/Shell.efi";
-            hash = "sha256-1xbBJupfi+ySvuaTVi7gBdlAsKKy9knieb2hi3Obc2M=";
+            url = "https://github.com/sethechosenone/secure-efi-shell/releases/download/v0.2.0/Shell.efi";
+            hash = "sha256-KQaBnuSCCueR2nfnDGt1AwXfbnSsX4xCBEVJRHKUWk0=";
           };
 
           dontUnpack = true;
