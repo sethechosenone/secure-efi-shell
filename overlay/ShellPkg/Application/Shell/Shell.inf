@@ -28,6 +28,8 @@
   Shell.h
   ShellAuth.c
   ShellAuth.h
+  ShellLog.c
+  ShellLog.h
   ShellParametersProtocol.c
   ShellParametersProtocol.h
   ShellProtocol.c

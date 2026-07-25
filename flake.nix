@@ -158,6 +158,40 @@ PYEOF
           source ./edksetup.sh >/dev/null
           exec ${pkgs.bear}/bin/bear --append -- build -a X64 -t GCC -p ShellPkg/ShellPkg.dsc "$@"
         '';
+
+        # Copy every ShellPkg file that differs from pristine upstream back into
+        # overlay/ (the inverse of setup-edk2's `cp -r overlay/* edk2/`).
+        # The edk2/ checkout's own git index is the source of truth for what
+        # changed, so new files are picked up without maintaining a list.
+        # Restricted to ShellPkg: build artefacts, Conf/, and editor droppings
+        # elsewhere in the tree are never overlay material.
+        sync-overlay = pkgs.writeShellScriptBin "sync-overlay" ''
+          set -e
+          if [ ! -d overlay ] || [ ! -d edk2/.git ]; then
+            echo "run from the repo root (needs ./overlay and ./edk2)"; exit 1
+          fi
+          git -C edk2 status --porcelain -uall -- ShellPkg | while read -r st path; do
+            case "$st" in
+              M|AM|MM|A|??)
+                mkdir -p "overlay/$(dirname "$path")"
+                cp "edk2/$path" "overlay/$path"
+                echo "synced  $path"
+                ;;
+              D)
+                echo "WARNING: deleted in edk2/ — remove overlay/$path by hand if intended"
+                ;;
+              *)
+                echo "WARNING: unhandled git status '$st' for $path — not synced"
+                ;;
+            esac
+          done
+          outside="$(git -C edk2 status --porcelain -- . ':!ShellPkg' ':!Build' ':!Conf' ':!.clangd' ':!compile_commands.json')"
+          if [ -n "$outside" ]; then
+            echo "NOTE: changes outside ShellPkg (not synced):"
+            echo "$outside"
+          fi
+          echo "done — check git status in the repo root before committing"
+        '';
       in
       {
         packages = {
@@ -188,6 +222,7 @@ PYEOF
             run-qemu
             capture-pcr7
             build-shell
+            sync-overlay
             provision-swtpm
             setup-edk2
           ];

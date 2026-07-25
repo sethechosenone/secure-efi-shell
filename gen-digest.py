@@ -23,7 +23,7 @@ SALT = bytes([
     0xF0, 0x73, 0x47, 0x42, 0x96, 0xB7, 0x73, 0xA3,
 ])
 MAX_PASSWORD_LEN = 64          # CHAR16s -> 128 bytes
-ITERATIONS = 100000            # must match STRETCH_ITERATIONS in ShellAuth.c
+ITERATIONS = 1000000           # must match STRETCH_ITERATIONS in ShellAuth.c
 
 
 def c_array(name: str, data: bytes) -> str:

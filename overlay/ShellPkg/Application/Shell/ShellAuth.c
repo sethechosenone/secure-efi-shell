@@ -1,19 +1,5 @@
-#include <Uefi.h>
-#include <IndustryStandard/Tpm20.h>
-#include <Library/Tpm2CommandLib.h>
-#include <Library/Tpm2DeviceLib.h>
-#include <Library/BaseLib.h>
-#include <Library/BaseMemoryLib.h>
-#include <Library/MemoryAllocationLib.h>
-#include <Library/UefiLib.h>
-#include <Library/UefiBootServicesTableLib.h>
-#include <Library/UefiRuntimeServicesTableLib.h>
-#include <Library/BaseCryptLib.h>
 #include "ShellAuth.h"
-#define MAX_PASSWORD_LEN 64
-#define MAX_AUTH_ATTEMPTS 3
-#define STRETCH_ITERATIONS 100000
-#define TPM_HANDLE 0x01800001
+#include "ShellLog.h"
 
 /*
  * The following function is AI-generated, but it's basically a re-implementation
@@ -95,7 +81,7 @@ STATIC BOOLEAN ReadExpected(UINT8 *expected) {
 
 VOID ShutoffOnFailure(CHAR16* reason, EFI_STATUS resetReason) {
   Print(L"[auth] critical error -- %s\n", reason);
-  Print(L"[auth] the system is going down NOW!\n");
+  Print(L"[sys] the system is going down NOW!\n");
   gRT->ResetSystem(EfiResetCold, resetReason, 0, NULL);
   CpuDeadLoop();
 }
@@ -115,7 +101,7 @@ BOOLEAN Authenticate(VOID) {
   ZeroMem(expected, sizeof(expected));
   CHAR16 buf[MAX_PASSWORD_LEN];
   ZeroMem(buf, sizeof(buf));
-  Print(L"[auth] enter password: ");
+  Print(L"[auth] enter password to use UEFI shell: ");
   UINTN idx = 0;
   for (;;) {
     EFI_INPUT_KEY key;
@@ -145,7 +131,8 @@ BOOLEAN Authenticate(VOID) {
   UINT8 userHash[SHA256_DIGEST_SIZE];
   if (!ReadExpected(expected)) {
     ZeroMem(buf, sizeof(buf));
-    ShutoffOnFailure(L"TPM read failure! (is secure boot enabled?)", EFI_SECURITY_VIOLATION);
+    LogAuthEvent(ShellAuthLogTPMPolicyFailure, 0);
+    ShutoffOnFailure(L"TPM state does not match policy! (is secure boot enabled?)", EFI_SECURITY_VIOLATION);
   }
   VOID *hashContext = AllocatePool(Sha256GetContextSize());
   if (hashContext == NULL) {
@@ -185,11 +172,13 @@ VOID AuthenticateOrReset(VOID) {
   BOOLEAN success = FALSE;
   for (int i = 0; i < MAX_AUTH_ATTEMPTS; i++)
     if (Authenticate()) {
+      LogAuthEvent(ShellAuthLogAuthSuccess, i + 1);
       success = TRUE;
       break;
-    }
+    } else LogAuthEvent(ShellAuthLogAuthFailure, i + 1);
   if (!success) {
-    Print(L"[auth] fuck off\n");
+    LogAuthEvent(ShellAuthLogAuthLockout, 0);
+    Print(L"[auth] too many failed authentication attempts -- fuck off\n");
     gRT->ResetSystem(EfiResetCold, EFI_SECURITY_VIOLATION, 0, NULL);
     CpuDeadLoop();
   }
