@@ -16,7 +16,7 @@
         # Bump url and hash together when cutting a new release.
         shell-efi = pkgs.stdenv.mkDerivation {
           pname = "secure-efi-shell";
-          version = "0.2.0";
+          version = "0.2.1";
 
           src = pkgs.fetchurl {
             url = "https://github.com/sethechosenone/secure-efi-shell/releases/download/v0.2.0/Shell.efi";
@@ -269,7 +269,7 @@ PYEOF
         let
           cfg = config.boot.secure-efi-shell;
           shell-efi = self.packages.${pkgs.stdenv.hostPlatform.system}.secure-efi-shell;
-          espShell = "${config.boot.loader.efi.efiSysMountPoint}/limine/efi/shell/shell.efi";
+          espShell = "${config.boot.loader.efi.efiSysMountPoint}/efi/shell/shell.efi";
 
           # One-time per-device TPM ceremony: seals the stretched password hash
           # into NV 0x01800001 behind PolicyPCR(7), using the REAL TPM via the
@@ -336,7 +336,7 @@ PYEOF
               default = true;
               description = ''
                 Add a Limine menu entry for the shell. Disable to write your own
-                entry (image_path: boot():/limine/efi/shell/shell.efi).
+                entry (image_path: boot():/efi/shell/shell.efi).
               '';
             };
 
@@ -359,7 +359,7 @@ PYEOF
                 /UEFI Shell
                 protocol: efi
                 comment: Command-line shell for running UEFI programs (requires secure boot)
-                image_path: boot():/limine/efi/shell/shell.efi
+                image_path: boot():/efi/shell/shell.efi
               '';
             };
 
